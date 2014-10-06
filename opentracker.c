@@ -623,9 +623,6 @@ int main( int argc, char **argv ) {
     ot_try_bind( serverip, 6969, FLAG_UDP );
   }
 
-  if( !g_udp_workers )
-    udp_init( -1, 0 );
-
 #ifdef WANT_SYSLOGS
   openlog( "opentracker", 0, LOG_USER );
   setlogmask(LOG_UPTO(LOG_INFO));
@@ -653,6 +650,9 @@ int main( int argc, char **argv ) {
     load_state( statefile );
 
   install_signal_handlers( );
+
+  if( !g_udp_workers )
+    udp_init( -1, 0 );
 
   /* Kick off our initial clock setting alarm */
   alarm(5);
