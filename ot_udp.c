@@ -26,9 +26,12 @@ static uint32_t g_key_of_the_hour[2] = {0};
 static ot_time  g_hour_of_the_key;
 
 static void udp_generate_rijndael_round_key() {
-  uint8_t key[16];
-  key[0] = random(); key[1] = random(); key[2] = random(); key[3] = random();
-  rijndaelKeySetupEnc128( g_rijndael_round_key, key );
+  uint32_t key[16];
+  key[0] = random();
+  key[1] = random();
+  key[2] = random();
+  key[3] = random();
+  rijndaelKeySetupEnc128( g_rijndael_round_key, (uint8_t*)key );
 
   g_key_of_the_hour[0] = random();
   g_hour_of_the_key = g_now_minutes;
