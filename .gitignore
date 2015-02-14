@@ -1,3 +1,4 @@
 opentracker
 *.o
 *.debug
+*~
