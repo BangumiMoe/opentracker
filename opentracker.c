@@ -48,6 +48,12 @@ static char * g_serverdir;
 static char * g_serveruser;
 static unsigned int g_udp_workers;
 
+#ifdef WANT_NOTIFY
+ot_ip6 g_notify_ip;
+uint16_t g_notify_port;
+char * g_notify_path;
+#endif
+
 static void panic( const char *routine ) {
   fprintf( stderr, "%s: %s\n", routine, strerror(errno) );
   exit( 111 );
@@ -74,6 +80,11 @@ static void signal_handler( int s ) {
     g_now_seconds = time(NULL);
     alarm(5);
   }
+#if defined(WANT_ACCESSLIST_BLACK) || defined(WANT_ACCESSLIST_WHITE)
+  else if (s == SIGHUP) {
+    accesslist_reload( );
+  }
+#endif
 }
 
 static void defaul_signal_handlers( void ) {
@@ -96,6 +107,12 @@ static void install_signal_handlers( void ) {
   sa.sa_flags = SA_RESTART;
   if ((sigaction(SIGINT, &sa, NULL) == -1) || (sigaction(SIGALRM, &sa, NULL) == -1) )
     panic( "install_signal_handlers" );
+
+#if defined(WANT_ACCESSLIST_BLACK) || defined(WANT_ACCESSLIST_WHITE)
+  if ((sigaction(SIGHUP, &sa, NULL) == -1))
+    panic( "install_signal_handlers" );
+  sigaddset (&signal_mask, SIGHUP);
+#endif
 
   sigaddset (&signal_mask, SIGINT);
   sigaddset (&signal_mask, SIGALRM);
@@ -425,6 +442,14 @@ int parse_configfile( char * config_filename ) {
       char *value = p + 18;
       while( isspace(*value) ) ++value;
       scan_uint( value, &g_udp_workers );
+#ifdef WANT_NOTIFY
+    } else if(!byte_diff(p, 9, "notify.ip" ) && isspace(p[9])) {
+      uint16_t tmpport = 80;
+      if (!scan_ip6_port(p + 9, g_notify_ip, &tmpport)) goto parse_error;
+      g_notify_port = tmpport;
+    } else if(!byte_diff(p, 11, "notify.path" ) && isspace(p[11])) {
+      set_config_option( &g_notify_path, p+11 );
+#endif
 #ifdef WANT_ACCESSLIST_WHITE
     } else if(!byte_diff(p, 16, "access.whitelist" ) && isspace(p[16])) {
       set_config_option( &g_accesslist_filename, p+17 );

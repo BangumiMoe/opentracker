@@ -59,6 +59,13 @@ typedef struct { ot_ip6 address; int bits; }
 /* From opentracker.c */
 extern time_t g_now_seconds;
 extern volatile int g_opentracker_running;
+
+#ifdef WANT_NOTIFY
+extern ot_ip6 g_notify_ip;
+extern uint16_t g_notify_port;
+extern char * g_notify_path;
+#endif
+
 #define       g_now_minutes (g_now_seconds/60)
 
 extern uint32_t g_tracker_id;

@@ -17,6 +17,8 @@
 #include "io.h"
 #include "iob.h"
 #include "array.h"
+#include "ip6.h"
+#include "socket.h"
 
 /* Opentracker */
 #include "trackerlogic.h"
@@ -30,6 +32,82 @@
 
 /* Forward declaration */
 size_t return_peers_for_torrent( ot_torrent *torrent, size_t amount, char *reply, PROTO_FLAG proto );
+
+#ifdef WANT_NOTIFY
+static char*to_hex(char*d, uint8_t*s){ char*m = "0123456789ABCDEF"; char *t = d; char*e = d + 40; while (d<e){ *d++ = m[*s >> 4]; *d++ = m[*s++ & 15]; }*d = 0; return t; }
+int notify_torrent_update(ot_torrent *torrent, int iscompleted) {
+  //torrent->hash
+  static char sz_post_data_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%s,\"downs\":%u,\"peers\":%u,\"seeds\":%u}}";
+  static char sz_post_header_f[] =
+    "POST /%s HTTP/1.1\r\n"
+    "Host: %s:%u\r\n"
+    "User-Agent: opentracker/mod\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: %u\r\n\r\n%s";
+
+  ot_ip6 tmpip;
+  uint16_t tmpport;
+  uint32_t scopeid;
+  struct http_data *cookie;
+  
+  char szheader[512], szdata[255], hex_out[42], szip[80];
+
+  int ret = -1, datalen;
+
+  int64 sock = socket_tcp6();
+  if (sock < 0) {
+    return -1;
+  }
+
+  if (!io_fd(sock)) {
+    return -1;
+  }
+  
+  /*if (!io_fd(sock) ||
+    !(cookie = (struct http_data*)malloc(sizeof(struct http_data)))) {
+    io_close(sock);
+    return -1;
+  }*/
+
+  if (ndelay_off(sock) == -1) {
+    io_close(sock);
+    return -1;
+  }
+
+  if (socket_connect6(sock, g_notify_ip, g_notify_port, 0) == -1 /*&&
+    errno != EINPROGRESS && errno != EWOULDBLOCK*/) {
+    //fprintf(stderr, "socket_connect6 failed!\n");
+    io_close(sock);
+    return -1;
+  }
+
+  datalen = fmt_ip6c(szip, g_notify_ip);
+  szip[datalen] = 0;
+
+  datalen = sprintf(szdata, sz_post_data_f, "update", to_hex(hex_out, torrent->hash),
+    iscompleted ? "true" : "false",
+    torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
+
+  datalen = sprintf(szheader, sz_post_header_f,
+    g_notify_path, szip, g_notify_port, datalen, szdata);
+
+  //fprintf(stderr, "all request data(%d):\n%s\n", datalen, szheader);
+  if (io_waitwrite(sock, szheader, datalen) > 0) {
+    ret = 0;
+  }
+
+  /*memset(cookie, 0, sizeof(struct http_data));
+  memcpy(cookie->ip, g_notify_ip, sizeof(ot_ip6));
+  iob_addbuf_free(&cookie->batch, strdup(szheader), datalen);
+
+  io_setcookie(sock, cookie);
+  io_wantwrite(sock);*/
+
+  io_close(sock);
+
+  return ret;
+}
+#endif
 
 void free_peerlist( ot_peerlist *peer_list ) {
   if( peer_list->peers.data ) {
@@ -73,6 +151,7 @@ void add_torrent_from_saved_state( ot_hash hash, ot_time base, size_t down_count
 
 size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstruct *ws, size_t amount ) {
   int         exactmatch, delta_torrentcount = 0;
+  int         iscompleted = 0;
   ot_torrent *torrent;
   ot_peer    *peer_dest;
   ot_vector  *torrents_list = mutex_bucket_lock_by_hash( *ws->hash );
@@ -137,6 +216,7 @@ size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstr
     torrent->peer_list->peer_count++;
     if( OT_PEERFLAG(&ws->peer) & PEER_FLAG_COMPLETED ) {
       torrent->peer_list->down_count++;
+      iscompleted = 1;
       stats_issue_event( EVENT_COMPLETED, 0, (uintptr_t)ws );
     }
     if( OT_PEERFLAG(&ws->peer) & PEER_FLAG_SEEDING )
@@ -164,6 +244,7 @@ size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstr
       torrent->peer_list->seed_count++;
     if( !(OT_PEERFLAG(peer_dest) & PEER_FLAG_COMPLETED ) &&  (OT_PEERFLAG(&ws->peer) & PEER_FLAG_COMPLETED ) ) {
       torrent->peer_list->down_count++;
+      iscompleted = 1;
       stats_issue_event( EVENT_COMPLETED, 0, (uintptr_t)ws );
     }
     if(   OT_PEERFLAG(peer_dest) & PEER_FLAG_COMPLETED )
@@ -175,6 +256,12 @@ size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstr
   if( proto == FLAG_MCA ) {
     mutex_bucket_unlock_by_hash( *ws->hash, delta_torrentcount );
     return 0;
+  }
+#endif
+
+#ifdef WANT_NOTIFY
+  if (torrent) {
+    notify_torrent_update(torrent, iscompleted);
   }
 #endif
 
@@ -383,6 +470,12 @@ size_t remove_peer_from_torrent( PROTO_FLAG proto, struct ot_workstruct *ws ) {
     ((uint32_t*)ws->reply)[4] = htonl( peer_list->seed_count);
     ws->reply_size = 20;
   }
+
+#ifdef WANT_NOTIFY
+  if (torrent) {
+    notify_torrent_update(torrent, 0);
+  }
+#endif
 
   mutex_bucket_unlock_by_hash( *ws->hash, 0 );
   return ws->reply_size;

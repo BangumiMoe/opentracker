@@ -144,6 +144,10 @@ void accesslist_deinit( void ) {
   g_accesslist = 0;
   g_accesslist_size = 0;
 }
+
+void accesslist_reload( ) {
+  accesslist_readfile( );
+}
 #endif
 
 int address_in_net( const ot_ip6 address, const ot_net *net ) {

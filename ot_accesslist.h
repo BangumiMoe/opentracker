@@ -18,6 +18,8 @@ int  accesslist_hashisvalid( ot_hash hash );
 
 extern char *g_accesslist_filename;
 
+void accesslist_reload( );
+
 #else
 #define accesslist_init( accesslist_filename )
 #define accesslist_deinit( )
