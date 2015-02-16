@@ -52,6 +52,7 @@ static unsigned int g_udp_workers;
 ot_ip6 g_notify_ip;
 uint16_t g_notify_port;
 char * g_notify_path;
+unsigned int g_notify_interval;
 #endif
 
 static void panic( const char *routine ) {
@@ -449,6 +450,14 @@ int parse_configfile( char * config_filename ) {
       g_notify_port = tmpport;
     } else if(!byte_diff(p, 11, "notify.path" ) && isspace(p[11])) {
       set_config_option( &g_notify_path, p+11 );
+    } else if(!byte_diff(p, 15, "notify.interval" ) && isspace(p[15])) {
+      char *value = p + 15;
+      while( isspace(*value) ) ++value;
+      scan_uint( value, &g_notify_interval );
+      if (g_notify_interval <= 0) {
+        fprintf( stdout, "notify.interval must be set properly!\n" );
+        g_notify_interval = 60;
+      }
 #endif
 #ifdef WANT_ACCESSLIST_WHITE
     } else if(!byte_diff(p, 16, "access.whitelist" ) && isspace(p[16])) {
