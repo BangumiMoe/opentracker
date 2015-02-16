@@ -64,6 +64,7 @@ extern volatile int g_opentracker_running;
 extern ot_ip6 g_notify_ip;
 extern uint16_t g_notify_port;
 extern char * g_notify_path;
+extern unsigned int g_notify_interval;
 #endif
 
 #define       g_now_minutes (g_now_seconds/60)
@@ -97,6 +98,7 @@ typedef struct ot_peerlist ot_peerlist;
 typedef struct {
   ot_hash      hash;
   ot_peerlist *peer_list;
+  uint32_t     bgm_completed;
 } ot_torrent;
 
 #include "ot_vector.h"

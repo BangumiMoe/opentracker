@@ -11,7 +11,8 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdint.h>
-
+#include <pthread.h>
+#include <ndelay.h>
 /* Libowfat */
 #include "byte.h"
 #include "io.h"
@@ -29,84 +30,58 @@
 #include "ot_accesslist.h"
 #include "ot_fullscrape.h"
 #include "ot_livesync.h"
+#include "ot_vector.h"
 
 /* Forward declaration */
 size_t return_peers_for_torrent( ot_torrent *torrent, size_t amount, char *reply, PROTO_FLAG proto );
 
 #ifdef WANT_NOTIFY
+static pthread_mutex_t bangumi_poster_mutex;
+static ot_vector bangumi_poster_vector;
+
 static char*to_hex(char*d, uint8_t*s){ char*m = "0123456789ABCDEF"; char *t = d; char*e = d + 40; while (d<e){ *d++ = m[*s >> 4]; *d++ = m[*s++ & 15]; }*d = 0; return t; }
-int notify_torrent_update(ot_torrent *torrent, int iscompleted) {
-  //torrent->hash
-  static char sz_post_data_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%s,\"downs\":%u,\"peers\":%u,\"seeds\":%u}}";
-  static char sz_post_header_f[] =
-    "POST /%s HTTP/1.1\r\n"
-    "Host: %s:%u\r\n"
-    "User-Agent: opentracker/mod\r\n"
-    "Content-Type: application/json\r\n"
-    "Content-Length: %u\r\n\r\n%s";
+int notify_torrent_update(ot_torrent *t, int iscompleted) {
 
-  ot_ip6 tmpip;
-  uint16_t tmpport;
-  uint32_t scopeid;
-  struct http_data *cookie;
-  
-  char szheader[512], szdata[255], hex_out[42], szip[80];
+  ot_torrent *torrent;
+  int         exactmatch;
+  char        hex_out[42];
 
-  int ret = -1, datalen;
+  fprintf(stderr, "new notifity: %s\n", to_hex(hex_out, t->hash));
+  fprintf(stderr, "bgm completed: %u \n", t->bgm_completed);
 
-  int64 sock = socket_tcp6();
-  if (sock < 0) {
-    return -1;
+  pthread_mutex_lock ( &bangumi_poster_mutex );
+
+  //insert torrent to vector
+  torrent = vector_find_or_insert(&bangumi_poster_vector, t->hash, sizeof( ot_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch);
+  if (! torrent ) {
+    fprintf(stderr, "bangumi: resize the vector failed");
+    pthread_mutex_unlock ( &bangumi_poster_mutex );
+    return -1; //resize the vector failed
   }
 
-  if (!io_fd(sock)) {
-    return -1;
-  }
-  
-  /*if (!io_fd(sock) ||
-    !(cookie = (struct http_data*)malloc(sizeof(struct http_data)))) {
-    io_close(sock);
-    return -1;
-  }*/
+  memcpy( torrent, t, sizeof(ot_torrent) );
 
-  if (ndelay_off(sock) == -1) {
-    io_close(sock);
-    return -1;
+  pthread_mutex_unlock ( &bangumi_poster_mutex );
+
+
+  if( !exactmatch ) {
+    fprintf(stderr, "not exactmatch: %s\n", to_hex(hex_out, torrent->hash));
+  } else {
+    fprintf(stderr, "exactmatch: %s\n", to_hex(hex_out, torrent->hash));
   }
 
-  if (socket_connect6(sock, g_notify_ip, g_notify_port, 0) == -1 /*&&
-    errno != EINPROGRESS && errno != EWOULDBLOCK*/) {
-    //fprintf(stderr, "socket_connect6 failed!\n");
-    io_close(sock);
-    return -1;
-  }
+  if (iscompleted) torrent->bgm_completed++;
+  //the t->bgm_completed should always be zero,
+  //only torrent->bgm_completed++ when notify_torrent_update is called with iscompleted=1
+  //after post the data to bangumi server, torrent->bgm_completed will be set to zero again due to memcpy
 
-  datalen = fmt_ip6c(szip, g_notify_ip);
-  szip[datalen] = 0;
+  fprintf(stderr, "vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
 
-  datalen = sprintf(szdata, sz_post_data_f, "update", to_hex(hex_out, torrent->hash),
-    iscompleted ? "true" : "false",
-    torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
 
-  datalen = sprintf(szheader, sz_post_header_f,
-    g_notify_path, szip, g_notify_port, datalen, szdata);
+  return 0;
 
-  //fprintf(stderr, "all request data(%d):\n%s\n", datalen, szheader);
-  if (io_waitwrite(sock, szheader, datalen) > 0) {
-    ret = 0;
-  }
-
-  /*memset(cookie, 0, sizeof(struct http_data));
-  memcpy(cookie->ip, g_notify_ip, sizeof(ot_ip6));
-  iob_addbuf_free(&cookie->batch, strdup(szheader), datalen);
-
-  io_setcookie(sock, cookie);
-  io_wantwrite(sock);*/
-
-  io_close(sock);
-
-  return ret;
 }
+
 #endif
 
 void free_peerlist( ot_peerlist *peer_list ) {
@@ -129,19 +104,20 @@ void add_torrent_from_saved_state( ot_hash hash, ot_time base, size_t down_count
 
   if( !accesslist_hashisvalid( hash ) )
     return mutex_bucket_unlock_by_hash( hash, 0 );
-  
+
   torrent = vector_find_or_insert( torrents_list, (void*)hash, sizeof( ot_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch );
   if( !torrent || exactmatch )
     return mutex_bucket_unlock_by_hash( hash, 0 );
 
   /* Create a new torrent entry, then */
   memcpy( torrent->hash, hash, sizeof(ot_hash) );
-    
+  torrent->bgm_completed = 0;
+
   if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
     vector_remove_torrent( torrents_list, torrent );
     return mutex_bucket_unlock_by_hash( hash, 0 );
   }
-    
+
   byte_zero( torrent->peer_list, sizeof( ot_peerlist ) );
   torrent->peer_list->base = base;
   torrent->peer_list->down_count = down_count;
@@ -175,6 +151,7 @@ size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstr
   if( !exactmatch ) {
     /* Create a new torrent entry, then */
     memcpy( torrent->hash, *ws->hash, sizeof(ot_hash) );
+    torrent->bgm_completed = 0;
 
     if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
       vector_remove_torrent( torrents_list, torrent );
@@ -287,7 +264,7 @@ static size_t return_peers_all( ot_peerlist *peer_list, char *reply ) {
     while( peer_count-- ) {
       if( OT_PEERFLAG(peers) & PEER_FLAG_SEEDING ) {
         r_end-=OT_PEER_COMPARE_SIZE;
-        memcpy(r_end,peers++,OT_PEER_COMPARE_SIZE);      
+        memcpy(r_end,peers++,OT_PEER_COMPARE_SIZE);
       } else {
         memcpy(reply,peers++,OT_PEER_COMPARE_SIZE);
         reply+=OT_PEER_COMPARE_SIZE;
@@ -305,7 +282,7 @@ static size_t return_peers_selection( ot_peerlist *peer_list, size_t amount, cha
   unsigned int shift = 0;
   size_t       result = OT_PEER_COMPARE_SIZE * amount;
   char       * r_end = reply + result;
-  
+
   if( OT_PEERLIST_HASBUCKETS(peer_list) ) {
     num_buckets = bucket_list->size;
     bucket_list = (ot_vector *)bucket_list->data;
@@ -336,7 +313,7 @@ static size_t return_peers_selection( ot_peerlist *peer_list, size_t amount, cha
     peer = ((ot_peer*)bucket_list[bucket_index].data) + bucket_offset;
     if( OT_PEERFLAG(peer) & PEER_FLAG_SEEDING ) {
       r_end-=OT_PEER_COMPARE_SIZE;
-      memcpy(r_end,peer,OT_PEER_COMPARE_SIZE);      
+      memcpy(r_end,peer,OT_PEER_COMPARE_SIZE);
     } else {
       memcpy(reply,peer,OT_PEER_COMPARE_SIZE);
       reply+=OT_PEER_COMPARE_SIZE;
@@ -503,6 +480,96 @@ void exerr( char * message ) {
   exit( 111 );
 }
 
+#ifdef WANT_NOTIFY
+
+static void * bangumi_poster(void * args) {
+
+  char  hex_out[42];
+  size_t  i;
+
+  while (1) {
+    sleep(g_notify_interval);
+
+    pthread_mutex_lock ( &bangumi_poster_mutex );
+    fprintf(stderr, "Bangumi Poster! \n");
+
+    size_t member_count = bangumi_poster_vector.size;
+    if (member_count == 0) goto fail_lock;
+
+    char sz_post[65536], szip[80];
+    char sz_post_body[65536] = "[";
+
+    char sz_post_data_element[512];
+    char sz_post_data_element_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%u,\"downs\":%u,\"peers\":%u,\"seeds\":%u}}";
+
+    char sz_post_header_f[] =
+            "POST /%s HTTP/1.1\r\n"
+            "Host: %s:%u\r\n"
+            "User-Agent: opentracker/mod\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %u\r\n\r\n%s";
+
+
+    for ( i = 0; i < member_count; i++  ) {
+      ot_torrent *torrent = (ot_torrent *) (bangumi_poster_vector.data + sizeof(ot_torrent) * i);
+      fprintf(stderr, "POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
+
+      sprintf(sz_post_data_element, sz_post_data_element_f, "update",
+              to_hex(hex_out, torrent->hash), torrent->bgm_completed,
+              torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
+
+      strcat(sz_post_body, sz_post_data_element);
+      if (i < member_count - 1) strcat(sz_post_body, ",");
+    }
+
+    strcat(sz_post_body, "]");
+
+    int64 sock = socket_tcp6();
+    uint32_t datalen;
+
+    if (sock < 0 || !io_fd(sock)) goto fail_lock;
+    if (ndelay_off(sock) == -1) goto fail_socket;
+    if (socket_connect6(sock, g_notify_ip, g_notify_port, 0) == -1 /*&&
+    errno != EINPROGRESS && errno != EWOULDBLOCK*/) goto fail_socket;
+
+    datalen = fmt_ip6c(szip, g_notify_ip);
+    szip[datalen] = 0;
+
+    datalen = sprintf(sz_post, sz_post_header_f,
+            g_notify_path, szip, g_notify_port, strlen(sz_post_body), sz_post_body);
+
+    fprintf(stderr, "all request data(%d):\n%s\n", datalen, sz_post);
+    if (io_waitwrite(sock, sz_post, datalen) > 0) {
+      //post successfully, clear the vector
+      bangumi_poster_vector.size = 0;
+    }
+
+    fail_socket:
+      io_close(sock);
+
+    fail_lock:
+      pthread_mutex_unlock ( &bangumi_poster_mutex );
+      continue;
+
+  }
+
+}
+
+static pthread_t bangumi_thread_id;
+void bangumi_init( ) {
+  byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
+  pthread_mutex_init( &bangumi_poster_mutex, NULL );
+  pthread_create( &bangumi_thread_id, NULL, bangumi_poster, NULL );
+}
+
+void bangumi_deinit( ) {
+  byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
+  pthread_cancel( bangumi_thread_id );
+  pthread_mutex_destroy( &bangumi_poster_mutex );
+}
+
+#endif
+
 void trackerlogic_init( ) {
   g_tracker_id = random();
 
@@ -517,6 +584,9 @@ void trackerlogic_init( ) {
   accesslist_init( );
   livesync_init( );
   stats_init( );
+#ifdef WANT_NOTIFY
+  bangumi_init( );
+#endif
 }
 
 void trackerlogic_deinit( void ) {
@@ -538,6 +608,9 @@ void trackerlogic_deinit( void ) {
   }
 
   /* Deinitialise background worker threads */
+#ifdef WANT_NOTIFY
+  bangumi_deinit( );
+#endif
   stats_deinit( );
   livesync_deinit( );
   accesslist_deinit( );
