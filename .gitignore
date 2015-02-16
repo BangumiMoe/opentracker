@@ -2,3 +2,4 @@ opentracker
 *.o
 *.debug
 *~
+.idea/*
