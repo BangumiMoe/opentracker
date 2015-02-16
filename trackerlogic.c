@@ -46,9 +46,6 @@ int notify_torrent_update(ot_torrent *t, int iscompleted) {
   int         exactmatch;
   char        hex_out[42];
 
-  fprintf(stderr, "new notifity: %s\n", to_hex(hex_out, t->hash));
-  fprintf(stderr, "bgm completed: %u \n", t->bgm_completed);
-
   pthread_mutex_lock ( &bangumi_poster_mutex );
 
   //insert torrent to vector
@@ -63,20 +60,10 @@ int notify_torrent_update(ot_torrent *t, int iscompleted) {
 
   pthread_mutex_unlock ( &bangumi_poster_mutex );
 
-
-  if( !exactmatch ) {
-    fprintf(stderr, "not exactmatch: %s\n", to_hex(hex_out, torrent->hash));
-  } else {
-    fprintf(stderr, "exactmatch: %s\n", to_hex(hex_out, torrent->hash));
-  }
-
   if (iscompleted) torrent->bgm_completed++;
   //the t->bgm_completed should always be zero,
   //only torrent->bgm_completed++ when notify_torrent_update is called with iscompleted=1
   //after post the data to bangumi server, torrent->bgm_completed will be set to zero again due to memcpy
-
-  fprintf(stderr, "vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
-
 
   return 0;
 
@@ -491,8 +478,6 @@ static void * bangumi_poster(void * args) {
     sleep(g_notify_interval);
 
     pthread_mutex_lock ( &bangumi_poster_mutex );
-    fprintf(stderr, "Bangumi Poster! \n");
-
     size_t member_count = bangumi_poster_vector.size;
     if (member_count == 0) goto fail_lock;
 
@@ -512,7 +497,7 @@ static void * bangumi_poster(void * args) {
 
     for ( i = 0; i < member_count; i++  ) {
       ot_torrent *torrent = (ot_torrent *) (bangumi_poster_vector.data + sizeof(ot_torrent) * i);
-      fprintf(stderr, "POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
+      //fprintf(stdout, "POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
 
       sprintf(sz_post_data_element, sz_post_data_element_f, "update",
               to_hex(hex_out, torrent->hash), torrent->bgm_completed,
@@ -538,7 +523,7 @@ static void * bangumi_poster(void * args) {
     datalen = sprintf(sz_post, sz_post_header_f,
             g_notify_path, szip, g_notify_port, strlen(sz_post_body), sz_post_body);
 
-    fprintf(stderr, "all request data(%d):\n%s\n", datalen, sz_post);
+    //fprintf(stderr, "all request data(%d):\n%s\n", datalen, sz_post);
     if (io_waitwrite(sock, sz_post, datalen) > 0) {
       //post successfully, clear the vector
       bangumi_poster_vector.size = 0;
