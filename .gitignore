@@ -3,3 +3,4 @@ opentracker
 *.debug
 *~
 .idea/*
+opentracker.conf
