@@ -36,6 +36,10 @@
 size_t return_peers_for_torrent( ot_torrent *torrent, size_t amount, char *reply, PROTO_FLAG proto );
 
 #ifdef WANT_NOTIFY
+
+#define bangumi_debug_print(...) \
+            do { if (BANGUMI_DEBUG) fprintf(stderr, __VA_ARGS__); } while (0)
+
 static pthread_mutex_t bangumi_poster_mutex;
 static ot_vector bangumi_poster_vector;
 
@@ -46,8 +50,7 @@ int notify_torrent_update(ot_torrent *t, int iscompleted) {
   int         exactmatch;
   char        hex_out[42];
 
-  fprintf(stderr, "new notifity: %s\n", to_hex(hex_out, t->hash));
-  fprintf(stderr, "bgm completed: %u \n", t->bgm_completed);
+  bangumi_debug_print("new torrent notifity: %s\n", to_hex(hex_out, t->hash));
 
   pthread_mutex_lock ( &bangumi_poster_mutex );
 
@@ -57,25 +60,21 @@ int notify_torrent_update(ot_torrent *t, int iscompleted) {
     fprintf(stderr, "bangumi: resize the vector failed");
     pthread_mutex_unlock ( &bangumi_poster_mutex );
     return -1; //resize the vector failed
-  }
+  pthread_mutex_unlock ( &bangumi_poster_mutex );
+}
 
   memcpy( torrent, t, sizeof(ot_torrent) );
 
-  pthread_mutex_unlock ( &bangumi_poster_mutex );
-
-
-  if( !exactmatch ) {
-    fprintf(stderr, "not exactmatch: %s\n", to_hex(hex_out, torrent->hash));
-  } else {
-    fprintf(stderr, "exactmatch: %s\n", to_hex(hex_out, torrent->hash));
-  }
 
   if (iscompleted) torrent->bgm_completed++;
   //the t->bgm_completed should always be zero,
   //only torrent->bgm_completed++ when notify_torrent_update is called with iscompleted=1
   //after post the data to bangumi server, torrent->bgm_completed will be set to zero again due to memcpy
 
-  fprintf(stderr, "vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
+  pthread_mutex_unlock ( &bangumi_poster_mutex );
+
+  bangumi_debug_print(exactmatch ? "exactmatch torrent: %s\n" : "new torrent: %s\n", to_hex(hex_out, torrent->hash));
+  bangumi_debug_print("vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
 
 
   return 0;
@@ -491,7 +490,10 @@ static void * bangumi_poster(void * args) {
     sleep(g_notify_interval);
 
     pthread_mutex_lock ( &bangumi_poster_mutex );
-    fprintf(stderr, "Bangumi Poster! \n");
+
+
+    bangumi_debug_print("Bangumi Poster Work Thread! \n");
+
 
     size_t member_count = bangumi_poster_vector.size;
     if (member_count == 0) goto fail_lock;
@@ -511,8 +513,10 @@ static void * bangumi_poster(void * args) {
 
 
     for ( i = 0; i < member_count; i++  ) {
+
       ot_torrent *torrent = (ot_torrent *) (bangumi_poster_vector.data + sizeof(ot_torrent) * i);
-      fprintf(stderr, "POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
+
+      bangumi_debug_print("POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
 
       sprintf(sz_post_data_element, sz_post_data_element_f, "update",
               to_hex(hex_out, torrent->hash), torrent->bgm_completed,
@@ -538,7 +542,8 @@ static void * bangumi_poster(void * args) {
     datalen = sprintf(sz_post, sz_post_header_f,
             g_notify_path, szip, g_notify_port, strlen(sz_post_body), sz_post_body);
 
-    fprintf(stderr, "all request data(%d):\n%s\n", datalen, sz_post);
+    bangumi_debug_print("all request data(%d):\n%s\n", datalen, sz_post);
+
     if (io_waitwrite(sock, sz_post, datalen) > 0) {
       //post successfully, clear the vector
       bangumi_poster_vector.size = 0;
