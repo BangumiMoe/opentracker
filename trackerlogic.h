@@ -142,6 +142,12 @@ struct ot_workstruct {
   ssize_t  reply_size;
 };
 
+typedef struct {
+  char *data;
+  size_t space;
+} bgm_sds; //simple dynamic string
+
+
 /*
    Exported functions
 */

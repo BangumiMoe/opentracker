@@ -43,6 +43,9 @@ size_t return_peers_for_torrent( ot_torrent *torrent, size_t amount, char *reply
 static pthread_mutex_t bangumi_poster_mutex;
 static ot_vector bangumi_poster_vector;
 
+static bgm_sds sz_post_body;
+static bgm_sds sz_post;
+
 static char*to_hex(char*d, uint8_t*s){ char*m = "0123456789ABCDEF"; char *t = d; char*e = d + 40; while (d<e){ *d++ = m[*s >> 4]; *d++ = m[*s++ & 15]; }*d = 0; return t; }
 int notify_torrent_update(ot_torrent *t, int iscompleted) {
 
@@ -481,36 +484,52 @@ void exerr( char * message ) {
 
 #ifdef WANT_NOTIFY
 
+static int bgm_strcat(bgm_sds *dest, char *src)
+{
+  while (strlen(dest->data) + strlen(src) + 1 > dest->space) {
+    size_t new_space = dest->space ? 2 * dest->space : 1024;
+    char *new_data = realloc( dest->data, new_space * sizeof(char) );
+    if( !new_data ) {
+      exerr("bangumi: sds realloc data error");
+      return 0;
+    }
+    dest->space = new_space;
+    dest->data = new_data;
+  }
+
+  strcat(dest->data, src);
+  bangumi_debug_print("size %zu space %zu\n", strlen(dest->data), dest->space);
+
+  return(1);
+}
+
 static void * bangumi_poster(void * args) {
 
   char  hex_out[42];
-  size_t  i;
+  size_t i;
+  const char sz_post_data_element_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%u,\"downs\":%zu,\"peers\":%zu,\"seeds\":%zu}}";
+  const char sz_post_header_f[] =
+                  "POST /%s HTTP/1.1\r\n"
+                  "Host: %s:%u\r\n"
+                  "User-Agent: opentracker/mod\r\n"
+                  "Content-Type: application/json\r\n"
+                  "Content-Length: %lu\r\n\r\n";
+
+  char sz_post_data_element[512], sz_post_header[1024];
+  char szip[80];
 
   while (1) {
     sleep(g_notify_interval);
 
+    memset(sz_post_body.data, 0, sz_post_body.space);
+    memset(sz_post.data, 0, sz_post.space);
+
     pthread_mutex_lock ( &bangumi_poster_mutex );
-
-
     bangumi_debug_print("Bangumi Poster Work Thread! \n");
-
 
     size_t member_count = bangumi_poster_vector.size;
     if (member_count == 0) goto fail_lock;
-
-    char sz_post[65536], szip[80];
-    char sz_post_body[65536] = "[";
-
-    char sz_post_data_element[512];
-    char sz_post_data_element_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%u,\"downs\":%u,\"peers\":%u,\"seeds\":%u}}";
-
-    char sz_post_header_f[] =
-            "POST /%s HTTP/1.1\r\n"
-            "Host: %s:%u\r\n"
-            "User-Agent: opentracker/mod\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: %u\r\n\r\n%s";
-
+    bgm_strcat(&sz_post_body, "[");
 
     for ( i = 0; i < member_count; i++  ) {
 
@@ -522,11 +541,11 @@ static void * bangumi_poster(void * args) {
               to_hex(hex_out, torrent->hash), torrent->bgm_completed,
               torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
 
-      strcat(sz_post_body, sz_post_data_element);
-      if (i < member_count - 1) strcat(sz_post_body, ",");
+      bgm_strcat(&sz_post_body, sz_post_data_element);
+      if (i < member_count - 1) bgm_strcat(&sz_post_body, ",");
     }
 
-    strcat(sz_post_body, "]");
+    bgm_strcat(&sz_post_body, "]");
 
     int64 sock = socket_tcp6();
     uint32_t datalen;
@@ -539,12 +558,17 @@ static void * bangumi_poster(void * args) {
     datalen = fmt_ip6c(szip, g_notify_ip);
     szip[datalen] = 0;
 
-    datalen = sprintf(sz_post, sz_post_header_f,
-            g_notify_path, szip, g_notify_port, strlen(sz_post_body), sz_post_body);
+    sprintf(sz_post_header, sz_post_header_f,
+            g_notify_path, szip, g_notify_port, strlen(sz_post_body.data));
 
-    bangumi_debug_print("all request data(%d):\n%s\n", datalen, sz_post);
+    bgm_strcat(&sz_post, sz_post_header);
+    bgm_strcat(&sz_post, sz_post_body.data);
 
-    if (io_waitwrite(sock, sz_post, datalen) > 0) {
+    datalen = strlen(sz_post.data);
+
+    bangumi_debug_print("all request data(%d):\n%s\n", datalen, sz_post.data);
+
+    if (io_waitwrite(sock, sz_post.data, datalen) > 0) {
       //post successfully, clear the vector
       bangumi_poster_vector.size = 0;
     }
@@ -562,7 +586,18 @@ static void * bangumi_poster(void * args) {
 
 static pthread_t bangumi_thread_id;
 void bangumi_init( ) {
+
+
   byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
+
+  sz_post_body.data = malloc(sizeof(char) * 1);
+  sz_post.data = malloc(sizeof(char) * 1);
+  sz_post_body.space = 1;
+  sz_post.space = 1;
+
+  memset(sz_post_body.data, 0, sz_post_body.space);
+  memset(sz_post.data, 0, sz_post.space);
+
   pthread_mutex_init( &bangumi_poster_mutex, NULL );
   pthread_create( &bangumi_thread_id, NULL, bangumi_poster, NULL );
 }
@@ -571,6 +606,9 @@ void bangumi_deinit( ) {
   byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
   pthread_cancel( bangumi_thread_id );
   pthread_mutex_destroy( &bangumi_poster_mutex );
+
+  free(sz_post.data);
+  free(sz_post_body.data);
 }
 
 #endif
