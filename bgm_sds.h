@@ -9,6 +9,8 @@ typedef struct {
   size_t space;
 } bgm_sds;
 
+int  sds_realloc( bgm_sds *dest, size_t new_size );
+
 void sds_init( bgm_sds *dest );
 void sds_free( bgm_sds *dest );
 int  sds_strcpy( bgm_sds *dest, char *src );
