@@ -52,14 +52,17 @@ int notify_torrent_update( ot_torrent *t, int iscompleted ) {
 
   //insert torrent to vector
   torrent = vector_find_or_insert(&bangumi_poster_vector, t->hash, sizeof( ot_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch);
-  if (! torrent ) {
-    fprintf(stderr, "bangumi: resize the vector failed");
+  if ( !torrent ) {
+    fprintf(stderr, "bangumi: resize the vector failed\n");
     pthread_mutex_unlock ( &bangumi_poster_mutex );
     return -1; //resize the vector failed
   }
 
-  memcpy( torrent, t, sizeof(ot_torrent) );
-
+  if( !exactmatch ) {
+    memcpy( torrent, t, sizeof(ot_torrent) );
+  } else {
+    torrent->peer_list = t->peer_list;
+  }
 
   if (iscompleted) torrent->bgm_completed++;
   //the t->bgm_completed should always be zero,

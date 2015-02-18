@@ -133,6 +133,9 @@ size_t add_peer_to_torrent_proxy( ot_hash hash, ot_peer *peer ) {
   if( !exactmatch ) {
     /* Create a new torrent entry, then */
     memcpy( torrent->hash, hash, sizeof(ot_hash) );
+#ifdef WANT_NOTIFY
+    torrent->bgm_completed = 0;
+#endif
 
     if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
       vector_remove_torrent( torrents_list, torrent );
@@ -469,7 +472,7 @@ static void server_mainloop() {
   int64 sock;
 
   /* inlined livesync_init() */
-  memset( g_peerbuffer_start, 0, sizeof( g_peerbuffer_start ) ); 
+  memset( g_peerbuffer_start, 0, sizeof( g_peerbuffer_start ) );
   g_peerbuffer_pos = g_peerbuffer_start;
   memcpy( g_peerbuffer_pos, &g_tracker_id, sizeof( g_tracker_id ) );
   uint32_pack_big( (char*)g_peerbuffer_pos + sizeof( g_tracker_id ), OT_SYNC_PEER);
