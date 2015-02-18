@@ -43,7 +43,7 @@ int sds_realloc( bgm_sds *dest, size_t new_size )
       return 0;
     }
 #ifdef _DEBUG_BANGUMI_SDS
-    fprintf(stderr, "size %zu space %zu -> %zu\n", dest, dest->data ? sds_strlen(dest) : 0, dest->space, new_space);
+    fprintf(stderr, "(0x%08x) size %zu space %zu -> %zu\n", dest, dest->data ? sds_strlen(dest) : 0, dest->space, new_space);
 #endif
     dest->space = new_space;
     dest->data = new_data;
