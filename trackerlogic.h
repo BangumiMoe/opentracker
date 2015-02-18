@@ -60,13 +60,6 @@ typedef struct { ot_ip6 address; int bits; }
 extern time_t g_now_seconds;
 extern volatile int g_opentracker_running;
 
-#ifdef WANT_NOTIFY
-extern ot_ip6 g_notify_ip;
-extern uint16_t g_notify_port;
-extern char * g_notify_path;
-extern unsigned int g_notify_interval;
-#endif
-
 #define       g_now_minutes (g_now_seconds/60)
 
 extern uint32_t g_tracker_id;
@@ -98,7 +91,9 @@ typedef struct ot_peerlist ot_peerlist;
 typedef struct {
   ot_hash      hash;
   ot_peerlist *peer_list;
+#ifdef WANT_NOTIFY
   uint32_t     bgm_completed;
+#endif
 } ot_torrent;
 
 #include "ot_vector.h"
@@ -141,12 +136,6 @@ struct ot_workstruct {
   char    *reply;
   ssize_t  reply_size;
 };
-
-typedef struct {
-  char *data;
-  size_t space;
-} bgm_sds; //simple dynamic string
-
 
 /*
    Exported functions

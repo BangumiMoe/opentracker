@@ -40,7 +40,11 @@ set(SOURCE_FILES
     scan_urlencoded_query.c
     scan_urlencoded_query.h
     trackerlogic.c
-    trackerlogic.h)
+    trackerlogic.h
+    bgm_sds.c
+    bgm_sds.h
+    bgm_notify.c
+    bgm_notify.h)
 
 include_directories(.)
 include_directories(../libowfat)
