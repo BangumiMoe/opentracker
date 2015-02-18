@@ -37,8 +37,11 @@ size_t return_peers_for_torrent( ot_torrent *torrent, size_t amount, char *reply
 
 #ifdef WANT_NOTIFY
 
-#define bangumi_debug_print(...) \
-            do { if (BANGUMI_DEBUG) fprintf(stderr, __VA_ARGS__); } while (0)
+#ifdef _DEBUG_BANGUMI
+#define bangumi_debug_print(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define bangumi_debug_print(...)
+#endif
 
 static pthread_mutex_t bangumi_poster_mutex;
 static ot_vector bangumi_poster_vector;
@@ -47,11 +50,11 @@ static bgm_sds sz_post_body;
 static bgm_sds sz_post;
 
 static char*to_hex(char*d, uint8_t*s){ char*m = "0123456789ABCDEF"; char *t = d; char*e = d + 40; while (d<e){ *d++ = m[*s >> 4]; *d++ = m[*s++ & 15]; }*d = 0; return t; }
-int notify_torrent_update(ot_torrent *t, int iscompleted) {
 
-  ot_torrent *torrent;
+int notify_torrent_update(ot_torrent *t, int iscompleted) {
   int         exactmatch;
   char        hex_out[42];
+  ot_torrent *torrent;
 
   bangumi_debug_print("new torrent notifity: %s\n", to_hex(hex_out, t->hash));
 
@@ -63,8 +66,7 @@ int notify_torrent_update(ot_torrent *t, int iscompleted) {
     fprintf(stderr, "bangumi: resize the vector failed");
     pthread_mutex_unlock ( &bangumi_poster_mutex );
     return -1; //resize the vector failed
-  pthread_mutex_unlock ( &bangumi_poster_mutex );
-}
+  }
 
   memcpy( torrent, t, sizeof(ot_torrent) );
 
@@ -79,9 +81,7 @@ int notify_torrent_update(ot_torrent *t, int iscompleted) {
   bangumi_debug_print(exactmatch ? "exactmatch torrent: %s\n" : "new torrent: %s\n", to_hex(hex_out, torrent->hash));
   bangumi_debug_print("vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
 
-
   return 0;
-
 }
 
 #endif
@@ -486,9 +486,12 @@ void exerr( char * message ) {
 
 static int bgm_strcat(bgm_sds *dest, char *src)
 {
+  size_t new_space;
+  char *new_data;
+
   while (strlen(dest->data) + strlen(src) + 1 > dest->space) {
-    size_t new_space = dest->space ? 2 * dest->space : 1024;
-    char *new_data = realloc( dest->data, new_space * sizeof(char) );
+    new_space = (dest->space >= 1024) ? 2 * dest->space : 1024;
+    new_data = realloc( dest->data, new_space * sizeof(char) );
     if( !new_data ) {
       exerr("bangumi: sds realloc data error");
       return 0;
@@ -500,7 +503,7 @@ static int bgm_strcat(bgm_sds *dest, char *src)
   strcat(dest->data, src);
   bangumi_debug_print("size %zu space %zu\n", strlen(dest->data), dest->space);
 
-  return(1);
+  return 1;
 }
 
 static void * bangumi_poster(void * args) {
@@ -585,9 +588,8 @@ static void * bangumi_poster(void * args) {
 }
 
 static pthread_t bangumi_thread_id;
+
 void bangumi_init( ) {
-
-
   byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
 
   sz_post_body.data = malloc(sizeof(char) * 1);
