@@ -4,12 +4,6 @@
 #ifndef __BGM_SDS_H__
 #define __BGM_SDS_H__
 
-#ifdef _DEBUG_BANGUMI
-#define bangumi_debug_print(...) fprintf(stderr, __VA_ARGS__)
-#else
-#define bangumi_debug_print(...)
-#endif
-
 typedef struct {
   char *data;
   size_t space;

@@ -22,6 +22,12 @@
 
 #ifdef WANT_NOTIFY
 
+#ifdef _DEBUG_BANGUMI_NOTIFY
+#define bangumi_debug_print(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define bangumi_debug_print(...)
+#endif
+
 extern ot_ip6   g_notify_ip;
 extern uint16_t g_notify_port;
 extern char *   g_notify_path;

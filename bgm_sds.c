@@ -9,9 +9,10 @@
 
 void sds_init( bgm_sds *dest )
 {
-  dest->data = malloc(sizeof(char) * 1);
-  dest->space = 1;
-  *dest->data = 0;
+  //memset( dest, 0, sizeof(bgm_sds) );
+  dest->data = NULL;
+  dest->space = 0;
+  sds_realloc( dest, 1 );
 }
 
 void sds_free( bgm_sds *dest )
@@ -26,32 +27,25 @@ int sds_realloc( bgm_sds *dest, size_t new_size )
   char  *new_data = NULL;
   size_t new_space;
 
-  /* new alloc */
-  if ( dest->space == 0 ) {
-    new_space = 1024;
-    new_data = malloc( new_space * sizeof(char) );
-    if( !new_data ) {
-      exerr("bangumi: sds realloc data error");
-      return 0;
-    }
-    dest->space = new_space;
-    dest->data = new_data;
-    *dest->data = 0;
-  }
-
   if ( new_size > dest->space ) {
     new_space = (new_size / 1024 + 1) * 1024;
-    new_data = realloc( dest->data, new_space * sizeof(char) );
+    if ( dest->space == 0 ) {
+      new_data = malloc( new_space * sizeof(char) );
+      if ( new_data ) {
+        *new_data = 0;
+      }
+    } else {
+      new_data = realloc( dest->data, new_space * sizeof(char) );
+    }
     if( !new_data ) {
       exerr("bangumi: sds realloc data error");
       return 0;
     }
+#ifdef _DEBUG_BANGUMI_SDS
+    fprintf(stderr, "size %zu space %zu -> %zu\n", dest, dest->data ? sds_strlen(dest) : 0, dest->space, new_space);
+#endif
     dest->space = new_space;
     dest->data = new_data;
-  }
-
-  if ( new_data ) {
-    bangumi_debug_print("size %zu space %zu\n", sds_strlen(dest), dest->space);
   }
 
   return 1;
