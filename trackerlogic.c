@@ -32,59 +32,12 @@
 #include "ot_livesync.h"
 #include "ot_vector.h"
 
+#ifdef WANT_NOTIFY
+#include "bgm_notify.h"
+#endif
+
 /* Forward declaration */
 size_t return_peers_for_torrent( ot_torrent *torrent, size_t amount, char *reply, PROTO_FLAG proto );
-
-#ifdef WANT_NOTIFY
-
-#define bangumi_debug_print(...) \
-            do { if (BANGUMI_DEBUG) fprintf(stderr, __VA_ARGS__); } while (0)
-
-static pthread_mutex_t bangumi_poster_mutex;
-static ot_vector bangumi_poster_vector;
-
-static bgm_sds sz_post_body;
-static bgm_sds sz_post;
-
-static char*to_hex(char*d, uint8_t*s){ char*m = "0123456789ABCDEF"; char *t = d; char*e = d + 40; while (d<e){ *d++ = m[*s >> 4]; *d++ = m[*s++ & 15]; }*d = 0; return t; }
-int notify_torrent_update(ot_torrent *t, int iscompleted) {
-
-  ot_torrent *torrent;
-  int         exactmatch;
-  char        hex_out[42];
-
-  bangumi_debug_print("new torrent notifity: %s\n", to_hex(hex_out, t->hash));
-
-  pthread_mutex_lock ( &bangumi_poster_mutex );
-
-  //insert torrent to vector
-  torrent = vector_find_or_insert(&bangumi_poster_vector, t->hash, sizeof( ot_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch);
-  if (! torrent ) {
-    fprintf(stderr, "bangumi: resize the vector failed");
-    pthread_mutex_unlock ( &bangumi_poster_mutex );
-    return -1; //resize the vector failed
-  pthread_mutex_unlock ( &bangumi_poster_mutex );
-}
-
-  memcpy( torrent, t, sizeof(ot_torrent) );
-
-
-  if (iscompleted) torrent->bgm_completed++;
-  //the t->bgm_completed should always be zero,
-  //only torrent->bgm_completed++ when notify_torrent_update is called with iscompleted=1
-  //after post the data to bangumi server, torrent->bgm_completed will be set to zero again due to memcpy
-
-  pthread_mutex_unlock ( &bangumi_poster_mutex );
-
-  bangumi_debug_print(exactmatch ? "exactmatch torrent: %s\n" : "new torrent: %s\n", to_hex(hex_out, torrent->hash));
-  bangumi_debug_print("vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
-
-
-  return 0;
-
-}
-
-#endif
 
 void free_peerlist( ot_peerlist *peer_list ) {
   if( peer_list->peers.data ) {
@@ -113,7 +66,9 @@ void add_torrent_from_saved_state( ot_hash hash, ot_time base, size_t down_count
 
   /* Create a new torrent entry, then */
   memcpy( torrent->hash, hash, sizeof(ot_hash) );
+#ifdef WANT_NOTIFY
   torrent->bgm_completed = 0;
+#endif
 
   if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
     vector_remove_torrent( torrents_list, torrent );
@@ -153,7 +108,9 @@ size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstr
   if( !exactmatch ) {
     /* Create a new torrent entry, then */
     memcpy( torrent->hash, *ws->hash, sizeof(ot_hash) );
+#ifdef WANT_NOTIFY
     torrent->bgm_completed = 0;
+#endif
 
     if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
       vector_remove_torrent( torrents_list, torrent );
@@ -482,137 +439,6 @@ void exerr( char * message ) {
   exit( 111 );
 }
 
-#ifdef WANT_NOTIFY
-
-static int bgm_strcat(bgm_sds *dest, char *src)
-{
-  while (strlen(dest->data) + strlen(src) + 1 > dest->space) {
-    size_t new_space = dest->space ? 2 * dest->space : 1024;
-    char *new_data = realloc( dest->data, new_space * sizeof(char) );
-    if( !new_data ) {
-      exerr("bangumi: sds realloc data error");
-      return 0;
-    }
-    dest->space = new_space;
-    dest->data = new_data;
-  }
-
-  strcat(dest->data, src);
-  bangumi_debug_print("size %zu space %zu\n", strlen(dest->data), dest->space);
-
-  return(1);
-}
-
-static void * bangumi_poster(void * args) {
-
-  char  hex_out[42];
-  size_t i;
-  const char sz_post_data_element_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%u,\"downs\":%zu,\"peers\":%zu,\"seeds\":%zu}}";
-  const char sz_post_header_f[] =
-                  "POST /%s HTTP/1.1\r\n"
-                  "Host: %s:%u\r\n"
-                  "User-Agent: opentracker/mod\r\n"
-                  "Content-Type: application/json\r\n"
-                  "Content-Length: %lu\r\n\r\n";
-
-  char sz_post_data_element[512], sz_post_header[1024];
-  char szip[80];
-
-  while (1) {
-    sleep(g_notify_interval);
-
-    memset(sz_post_body.data, 0, sz_post_body.space);
-    memset(sz_post.data, 0, sz_post.space);
-
-    pthread_mutex_lock ( &bangumi_poster_mutex );
-    bangumi_debug_print("Bangumi Poster Work Thread! \n");
-
-    size_t member_count = bangumi_poster_vector.size;
-    if (member_count == 0) goto fail_lock;
-    bgm_strcat(&sz_post_body, "[");
-
-    for ( i = 0; i < member_count; i++  ) {
-
-      ot_torrent *torrent = (ot_torrent *) (bangumi_poster_vector.data + sizeof(ot_torrent) * i);
-
-      bangumi_debug_print("POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
-
-      sprintf(sz_post_data_element, sz_post_data_element_f, "update",
-              to_hex(hex_out, torrent->hash), torrent->bgm_completed,
-              torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
-
-      bgm_strcat(&sz_post_body, sz_post_data_element);
-      if (i < member_count - 1) bgm_strcat(&sz_post_body, ",");
-    }
-
-    bgm_strcat(&sz_post_body, "]");
-
-    int64 sock = socket_tcp6();
-    uint32_t datalen;
-
-    if (sock < 0 || !io_fd(sock)) goto fail_lock;
-    if (ndelay_off(sock) == -1) goto fail_socket;
-    if (socket_connect6(sock, g_notify_ip, g_notify_port, 0) == -1 /*&&
-    errno != EINPROGRESS && errno != EWOULDBLOCK*/) goto fail_socket;
-
-    datalen = fmt_ip6c(szip, g_notify_ip);
-    szip[datalen] = 0;
-
-    sprintf(sz_post_header, sz_post_header_f,
-            g_notify_path, szip, g_notify_port, strlen(sz_post_body.data));
-
-    bgm_strcat(&sz_post, sz_post_header);
-    bgm_strcat(&sz_post, sz_post_body.data);
-
-    datalen = strlen(sz_post.data);
-
-    bangumi_debug_print("all request data(%d):\n%s\n", datalen, sz_post.data);
-
-    if (io_waitwrite(sock, sz_post.data, datalen) > 0) {
-      //post successfully, clear the vector
-      bangumi_poster_vector.size = 0;
-    }
-
-    fail_socket:
-      io_close(sock);
-
-    fail_lock:
-      pthread_mutex_unlock ( &bangumi_poster_mutex );
-      continue;
-
-  }
-
-}
-
-static pthread_t bangumi_thread_id;
-void bangumi_init( ) {
-
-
-  byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
-
-  sz_post_body.data = malloc(sizeof(char) * 1);
-  sz_post.data = malloc(sizeof(char) * 1);
-  sz_post_body.space = 1;
-  sz_post.space = 1;
-
-  memset(sz_post_body.data, 0, sz_post_body.space);
-  memset(sz_post.data, 0, sz_post.space);
-
-  pthread_mutex_init( &bangumi_poster_mutex, NULL );
-  pthread_create( &bangumi_thread_id, NULL, bangumi_poster, NULL );
-}
-
-void bangumi_deinit( ) {
-  byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
-  pthread_cancel( bangumi_thread_id );
-  pthread_mutex_destroy( &bangumi_poster_mutex );
-
-  free(sz_post.data);
-  free(sz_post_body.data);
-}
-
-#endif
-
 void trackerlogic_init( ) {
   g_tracker_id = random();
 
@@ -628,7 +454,7 @@ void trackerlogic_init( ) {
   livesync_init( );
   stats_init( );
 #ifdef WANT_NOTIFY
-  bangumi_init( );
+  bgm_notify_init( );
 #endif
 }
 
@@ -652,7 +478,7 @@ void trackerlogic_deinit( void ) {
 
   /* Deinitialise background worker threads */
 #ifdef WANT_NOTIFY
-  bangumi_deinit( );
+  bgm_notify_deinit( );
 #endif
   stats_deinit( );
   livesync_deinit( );

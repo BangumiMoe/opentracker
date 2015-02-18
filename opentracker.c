@@ -49,10 +49,10 @@ static char * g_serveruser;
 static unsigned int g_udp_workers;
 
 #ifdef WANT_NOTIFY
-ot_ip6 g_notify_ip;
+ot_ip6   g_notify_ip;
 uint16_t g_notify_port;
-char * g_notify_path;
-unsigned int g_notify_interval;
+char *   g_notify_path;
+uint32_t g_notify_interval;
 #endif
 
 static void panic( const char *routine ) {
