@@ -4,10 +4,7 @@
 
 #ifdef WANT_NOTIFY
 
-extern ot_ip6 g_notify_ip;
-extern uint16_t g_notify_port;
-extern char * g_notify_path;
-extern unsigned int g_notify_interval;
+#include "trackerlogic.h"
 
 void bgm_notify_init( );
 void bgm_notify_deinit( );

@@ -22,6 +22,11 @@
 
 #ifdef WANT_NOTIFY
 
+extern ot_ip6   g_notify_ip;
+extern uint16_t g_notify_port;
+extern char *   g_notify_path;
+extern uint32_t g_notify_interval;
+
 static pthread_mutex_t bangumi_poster_mutex;
 static ot_vector bangumi_poster_vector;
 
@@ -137,10 +142,12 @@ static void * bangumi_poster(void * args) {
     pthread_mutex_unlock ( &bangumi_poster_mutex );
     continue;
   }
+
+  return NULL;
 }
 
 static pthread_t bangumi_thread_id;
-void bangumi_init( ) {
+void bgm_notify_init( ) {
   byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
 
   sds_init( &sz_post );
@@ -153,7 +160,7 @@ void bangumi_init( ) {
   pthread_create( &bangumi_thread_id, NULL, bangumi_poster, NULL );
 }
 
-void bangumi_deinit( ) {
+void bgm_notify_deinit( ) {
   byte_zero( &bangumi_poster_vector, sizeof( ot_vector ) );
   pthread_cancel( bangumi_thread_id );
   pthread_mutex_destroy( &bangumi_poster_mutex );
