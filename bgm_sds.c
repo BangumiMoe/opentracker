@@ -11,7 +11,7 @@ void sds_init( bgm_sds *dest )
 {
   dest->data = malloc(sizeof(char) * 1);
   dest->space = 1;
-  dest->data[0] = 0;
+  *dest->data = 0;
 }
 
 void sds_free( bgm_sds *dest )
@@ -36,10 +36,11 @@ int sds_realloc( bgm_sds *dest, size_t new_size )
     }
     dest->space = new_space;
     dest->data = new_data;
+    *dest->data = 0;
   }
 
-  while ( new_size > dest->space ) {
-    new_space = (dest->space >= 1024) ? 2 * dest->space : 1024;
+  if ( new_size > dest->space ) {
+    new_space = (new_size / 1024 + 1) * 1024;
     new_data = realloc( dest->data, new_space * sizeof(char) );
     if( !new_data ) {
       exerr("bangumi: sds realloc data error");
@@ -50,7 +51,7 @@ int sds_realloc( bgm_sds *dest, size_t new_size )
   }
 
   if ( new_data ) {
-    bangumi_debug_print("size %zu space %zu\n", strlen(dest->data), dest->space);
+    bangumi_debug_print("size %zu space %zu\n", sds_strlen(dest), dest->space);
   }
 
   return 1;
@@ -67,9 +68,14 @@ int sds_strcpy( bgm_sds *dest, char *src )
 
 int sds_strcat( bgm_sds *dest, char *src )
 {
-  if (sds_realloc( dest, strlen(dest->data) + strlen(src) + 1 )) {
+  if (sds_realloc( dest, sds_strlen(dest) + strlen(src) + 1 )) {
     strcat(dest->data, src);
     return 1;
   }
   return 0;
+}
+
+size_t sds_strlen( bgm_sds *dest )
+{
+  return strlen( dest->data );
 }

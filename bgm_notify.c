@@ -94,15 +94,15 @@ static void * bangumi_poster(void * args) {
     if (member_count == 0) goto fail_lock;
     sds_strcpy(&sz_post_body, "[");
 
-    for ( i = 0; i < member_count; i++  ) {
+    for ( i = 0; i < member_count; i++ ) {
 
       ot_torrent *torrent = (ot_torrent *) (bangumi_poster_vector.data + sizeof(ot_torrent) * i);
 
       bangumi_debug_print("POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
 
       sprintf(sz_post_data_element, sz_post_data_element_f, "update",
-      to_hex(hex_out, torrent->hash), torrent->bgm_completed,
-      torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
+        to_hex(hex_out, torrent->hash), torrent->bgm_completed,
+        torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
 
       sds_strcat(&sz_post_body, sz_post_data_element);
       if (i < member_count - 1) sds_strcat(&sz_post_body, ",");
@@ -121,12 +121,12 @@ static void * bangumi_poster(void * args) {
     szip[datalen] = 0;
 
     sprintf(sz_post_header, sz_post_header_f,
-      g_notify_path, szip, g_notify_port, strlen(sz_post_body.data));
+      g_notify_path, szip, g_notify_port, sds_strlen(&sz_post_body));
 
     sds_strcpy(&sz_post, sz_post_header);
     sds_strcat(&sz_post, sz_post_body.data);
 
-    datalen = strlen(sz_post.data);
+    datalen = sds_strlen(&sz_post);
 
     bangumi_debug_print("all request data(%d):\n%s\n", datalen, sz_post.data);
 
@@ -152,9 +152,6 @@ void bgm_notify_init( ) {
 
   sds_init( &sz_post );
   sds_init( &sz_post_body );
-
-  memset(sz_post_body.data, 0, sz_post_body.space);
-  memset(sz_post.data, 0, sz_post.space);
 
   pthread_mutex_init( &bangumi_poster_mutex, NULL );
   pthread_create( &bangumi_thread_id, NULL, bangumi_poster, NULL );
