@@ -109,9 +109,15 @@ static void * bangumi_poster(void * args) {
 
       bangumi_debug_print("POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
 
-      sprintf(sz_post_data_element, sz_post_data_element_f, "update",
-        to_hex(hex_out, torrent->hash), torrent->bgm_completed,
-        torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
+      if (torrent->peer_list) {
+        sprintf(sz_post_data_element, sz_post_data_element_f, "update",
+                to_hex(hex_out, torrent->hash), torrent->bgm_completed,
+                torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
+      } else {
+        sprintf(sz_post_data_element, sz_post_data_element_f, "update",
+                to_hex(hex_out, torrent->hash), torrent->bgm_completed,
+                0, 0, 0);
+      }
 
       sds_strcat(&sz_post_body, sz_post_data_element);
       if (i < member_count - 1) sds_strcat(&sz_post_body, ",");
