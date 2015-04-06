@@ -91,9 +91,6 @@ typedef struct ot_peerlist ot_peerlist;
 typedef struct {
   ot_hash      hash;
   ot_peerlist *peer_list;
-#ifdef WANT_NOTIFY
-  uint32_t     bgm_completed;
-#endif
 } ot_torrent;
 
 #include "ot_vector.h"

@@ -67,9 +67,6 @@ void add_torrent_from_saved_state( ot_hash hash, ot_time base, size_t down_count
 
   /* Create a new torrent entry, then */
   memcpy( torrent->hash, hash, sizeof(ot_hash) );
-#ifdef WANT_NOTIFY
-  torrent->bgm_completed = 0;
-#endif
 
   if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
     vector_remove_torrent( torrents_list, torrent );
@@ -109,9 +106,6 @@ size_t add_peer_to_torrent_and_return_peers( PROTO_FLAG proto, struct ot_workstr
   if( !exactmatch ) {
     /* Create a new torrent entry, then */
     memcpy( torrent->hash, *ws->hash, sizeof(ot_hash) );
-#ifdef WANT_NOTIFY
-    torrent->bgm_completed = 0;
-#endif
 
     if( !( torrent->peer_list = malloc( sizeof (ot_peerlist) ) ) ) {
       vector_remove_torrent( torrents_list, torrent );

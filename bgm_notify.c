@@ -44,34 +44,37 @@ static char*to_hex(char*d, uint8_t*s){ char*m = "0123456789ABCDEF"; char *t = d;
 int notify_torrent_update( ot_torrent *t, int iscompleted ) {
   int         exactmatch;
   char        hex_out[42];
-  ot_torrent *torrent;
+  bgm_torrent *bt;
 
   bangumi_debug_print("new torrent notifity: %s\n", to_hex(hex_out, t->hash));
 
   pthread_mutex_lock ( &bangumi_poster_mutex );
 
   //insert torrent to vector
-  torrent = vector_find_or_insert(&bangumi_poster_vector, t->hash, sizeof( ot_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch);
-  if ( !torrent ) {
+  bt = vector_find_or_insert(&bangumi_poster_vector, t->hash, sizeof( bgm_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch);
+  if ( !bt ) {
     fprintf(stderr, "bangumi: resize the vector failed\n");
     pthread_mutex_unlock ( &bangumi_poster_mutex );
     return -1; //resize the vector failed
   }
 
   if( !exactmatch ) {
-    memcpy( torrent, t, sizeof(ot_torrent) );
-  } else {
-    torrent->peer_list = t->peer_list;
+    memset( bt, 0, sizeof(bgm_torrent) );
   }
 
-  if (iscompleted) torrent->bgm_completed++;
-  //the t->bgm_completed should always be zero,
-  //only torrent->bgm_completed++ when notify_torrent_update is called with iscompleted=1
-  //after post the data to bangumi server, torrent->bgm_completed will be set to zero again due to memcpy
+  if ( t->peer_list ) {
+    bt->seed_count = t->peer_list->seed_count;
+    bt->peer_count = t->peer_list->peer_count;
+    bt->down_count = t->peer_list->down_count;
+  }
+
+  if (iscompleted) bt->completed++;
+  //only bt->completed++ when notify_torrent_update is called with iscompleted=1
+  //after post the data to bangumi server, bt->completed will be set to zero again due to memset
 
   pthread_mutex_unlock ( &bangumi_poster_mutex );
 
-  bangumi_debug_print(exactmatch ? "exactmatch torrent: %s\n" : "new torrent: %s\n", to_hex(hex_out, torrent->hash));
+  bangumi_debug_print(exactmatch ? "exactmatch torrent: %s\n" : "new torrent: %s\n", to_hex(hex_out, bt->hash));
   bangumi_debug_print("vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
 
   return 0;
@@ -92,6 +95,8 @@ static void * bangumi_poster(void * args) {
   int64 sock;
   uint32_t datalen;
   size_t i;
+  size_t member_count;
+  bgm_torrent *bt;
 
   while (1) {
     sleep(g_notify_interval);
@@ -99,25 +104,19 @@ static void * bangumi_poster(void * args) {
     pthread_mutex_lock ( &bangumi_poster_mutex );
     bangumi_debug_print("Bangumi Poster Work Thread! \n");
 
-    size_t member_count = bangumi_poster_vector.size;
+    member_count = bangumi_poster_vector.size;
     if (member_count == 0) goto fail_lock;
     sds_strcpy(&sz_post_body, "[");
 
     for ( i = 0; i < member_count; i++ ) {
 
-      ot_torrent *torrent = (ot_torrent *) (bangumi_poster_vector.data + sizeof(ot_torrent) * i);
+      bt = (bgm_torrent *) (bangumi_poster_vector.data + sizeof(bgm_torrent) * i);
 
-      bangumi_debug_print("POST TORRENT %s!\n", to_hex(hex_out, torrent->hash));
+      bangumi_debug_print("POST TORRENT %s!\n", to_hex(hex_out, bt->hash));
 
-      if (torrent->peer_list) {
-        sprintf(sz_post_data_element, sz_post_data_element_f, "update",
-                to_hex(hex_out, torrent->hash), torrent->bgm_completed,
-                torrent->peer_list->down_count, torrent->peer_list->peer_count, torrent->peer_list->seed_count);
-      } else {
-        sprintf(sz_post_data_element, sz_post_data_element_f, "update",
-                to_hex(hex_out, torrent->hash), torrent->bgm_completed,
-                0, 0, 0);
-      }
+      sprintf(sz_post_data_element, sz_post_data_element_f, "update",
+              to_hex(hex_out, bt->hash), bt->completed,
+              bt->down_count, bt->peer_count, bt->seed_count);
 
       sds_strcat(&sz_post_body, sz_post_data_element);
       if (i < member_count - 1) sds_strcat(&sz_post_body, ",");
