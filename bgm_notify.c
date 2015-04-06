@@ -58,8 +58,10 @@ int notify_torrent_update( ot_torrent *t, int iscompleted ) {
     return -1; //resize the vector failed
   }
 
-  if( !exactmatch ) {
+  if ( !exactmatch ) {
+    /* Create a new torrent entry, then */
     memset( bt, 0, sizeof(bgm_torrent) );
+    memcpy( bt->hash, t->hash, sizeof(ot_hash) );
   }
 
   if ( t->peer_list ) {
