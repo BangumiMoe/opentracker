@@ -50,7 +50,6 @@ void free_peerlist( ot_peerlist *peer_list ) {
     free( peer_list->peers.data );
   }
   free( peer_list );
-  peer_list = NULL;
 }
 
 void add_torrent_from_saved_state( ot_hash hash, ot_time base, size_t down_count ) {
