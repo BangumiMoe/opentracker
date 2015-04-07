@@ -48,7 +48,7 @@ int notify_torrent_update( ot_torrent *t, int iscompleted ) {
 
   bangumi_debug_print("new torrent notifity: %s\n", to_hex(hex_out, t->hash));
 
-  pthread_mutex_lock ( &bangumi_poster_mutex );
+  pthread_mutex_lock( &bangumi_poster_mutex );
 
   //insert torrent to vector
   bt = vector_find_or_insert(&bangumi_poster_vector, t->hash, sizeof( bgm_torrent ), OT_HASH_COMPARE_SIZE, &exactmatch);
@@ -74,7 +74,7 @@ int notify_torrent_update( ot_torrent *t, int iscompleted ) {
   //only bt->completed++ when notify_torrent_update is called with iscompleted=1
   //after post the data to bangumi server, bt->completed will be set to zero again due to memset
 
-  pthread_mutex_unlock ( &bangumi_poster_mutex );
+  pthread_mutex_unlock( &bangumi_poster_mutex );
 
   bangumi_debug_print(exactmatch ? "exactmatch torrent: %s\n" : "new torrent: %s\n", to_hex(hex_out, bt->hash));
   bangumi_debug_print("vector size: %zu, space: %zu \n", bangumi_poster_vector.size, bangumi_poster_vector.space);
@@ -103,7 +103,7 @@ static void * bangumi_poster(void * args) {
   while (1) {
     sleep(g_notify_interval);
 
-    pthread_mutex_lock ( &bangumi_poster_mutex );
+    pthread_mutex_lock( &bangumi_poster_mutex );
     bangumi_debug_print("Bangumi Poster Work Thread! \n");
 
     member_count = bangumi_poster_vector.size;
@@ -155,7 +155,7 @@ static void * bangumi_poster(void * args) {
     io_close(sock);
 
   fail_lock:
-    pthread_mutex_unlock ( &bangumi_poster_mutex );
+    pthread_mutex_unlock( &bangumi_poster_mutex );
     continue;
   }
 

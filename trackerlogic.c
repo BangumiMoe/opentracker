@@ -403,7 +403,7 @@ size_t remove_peer_from_torrent( PROTO_FLAG proto, struct ot_workstruct *ws ) {
   }
 
 #ifdef WANT_NOTIFY
-  if (torrent) {
+  if (exactmatch && torrent) {
     notify_torrent_update(torrent, 0);
   }
 #endif
