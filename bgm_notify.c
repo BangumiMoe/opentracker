@@ -83,7 +83,7 @@ int notify_torrent_update( ot_torrent *t, int iscompleted ) {
 }
 
 static void * bangumi_poster(void * args) {
-  const char sz_post_data_element_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%u,\"downs\":%zu,\"peers\":%zu,\"seeds\":%zu}}";
+  const char sz_post_data_element_f[] = "{\"action\":\"%s\",\"infoHash\":\"%s\",\"data\":{\"completed\":%zu,\"downs\":%zu,\"peers\":%zu,\"seeds\":%zu}}";
   const char sz_post_header_f[] =
     "POST /%s HTTP/1.1\r\n"
     "Host: %s:%u\r\n"
